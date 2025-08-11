@@ -1,0 +1,34 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environment
+venv/
+
+# Postgres config files (optional but recommended)
+*.pgpass
+*.pg_service.conf
+*.sqlite3
+
+# Migrations cache
+**/__pycache__/
+
+# Editor and IDE files
+.vscode/
+.idea/
+
+# Environment variables and secrets
+.env
+*.env
+
+# Logs
+*.log
+
+# MacOS specific
+.DS_Store
+
+# Python packaging
+*.egg-info/
+dist/
+build/
