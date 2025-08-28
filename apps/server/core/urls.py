@@ -17,9 +17,17 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from chat.views import RoomViewSet, MessageViewSet
+
+router = DefaultRouter()
+router.register(r"rooms", RoomViewSet, basename="room")
+router.register(r"messages", MessageViewSet, basename="message")
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/", include("djoser.urls")),
     path("api/auth/", include("djoser.urls.authtoken")),
+    path("api/auth/", include("djoser.urls.jwt")),
+    path("api/", include(router.urls)),
 ]
