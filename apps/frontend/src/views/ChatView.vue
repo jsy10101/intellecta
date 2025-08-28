@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { useAuth } from "../stores/auth";
 import { useChat } from "../stores/chat";
+import { useWebSocket } from "../composables/useWebSocket";
 import AppHeader from "../components/AppHeader.vue";
 import AuthForm from "../components/AuthForm.vue";
 import RoomSidebar from "../components/RoomSidebar.vue";
@@ -24,20 +25,71 @@ const currentMessages = computed<Message[]>(() =>
   activeRoomId.value ? (chat.messages[activeRoomId.value] || []) : []
 );
 
+// --- WS glue ---
+let ws: ReturnType<typeof useWebSocket> | null = null;
+const accessToken = computed(() => localStorage.getItem("access") || "");
+
+// Reconnect WS whenever room or token changes
+watch([activeRoomId, accessToken], ([roomId, token], _old, onCleanup) => {
+  // close previous socket
+  if (ws && (ws as any).close) (ws as any).close();
+  ws = null;
+
+  if (!roomId || !token) return;
+
+  // open new socket and subscribe to room
+  ws = useWebSocket(roomId, token);
+
+  // pipe incoming WS messages into Pinia store (dedupe by id)
+  const stop = watch(ws.messages, (list) => {
+    if (!roomId) return;
+    const last = list[list.length - 1];
+    if (!last) return;
+    const arr = chat.messages[roomId] || [];
+    if (!arr.some(m => m.id === last.id)) {
+      chat.messages[roomId] = [...arr, last];
+    }
+  });
+
+  onCleanup(() => {
+    stop();
+    if (ws && (ws as any).close) (ws as any).close();
+  });
+});
+
+// ---------
+
 async function login(p: { username:string; password:string }) {
   errorMsg.value = null; loading.value = true;
   try { await auth.login(p.username, p.password); await afterLogin(); }
   catch (e:any) { errorMsg.value = e?.response?.data?.detail || "Login failed"; }
   finally { loading.value = false; }
 }
+
 async function afterLogin() {
   await chat.fetchRooms();
-  if (chat.rooms.length) { activeRoomId.value = chat.rooms[0].id; await chat.fetchMessages(activeRoomId.value); }
+  if (chat.rooms.length) {
+    activeRoomId.value = chat.rooms[0].id;
+    await chat.fetchMessages(activeRoomId.value);
+  }
 }
-async function selectRoom(id:number) { if (activeRoomId.value===id) return; activeRoomId.value = id; await chat.fetchMessages(id); }
-async function send(body:string) { if (!activeRoomId.value) return; await chat.sendMessage(activeRoomId.value, body); }
 
-onMounted(async () => { try { await auth.fetchMe(); await afterLogin(); } catch {} });
+async function selectRoom(id:number) {
+  if (activeRoomId.value===id) return;
+  activeRoomId.value = id;
+  await chat.fetchMessages(id); // initial history via REST; live updates via WS
+}
+
+// We keep sending via REST; WS will broadcast the saved message back.
+// (If your consumer supports sending over WS, we can switch later.)
+async function send(body:string) {
+  if (!activeRoomId.value) return;
+  await chat.sendMessage(activeRoomId.value, body);
+}
+
+onMounted(async () => {
+  try { await auth.fetchMe(); await afterLogin(); } catch {}
+});
 </script>
 
 <template>
